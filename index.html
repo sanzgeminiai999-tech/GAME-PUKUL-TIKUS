@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whac-a-Mole Cepat</title>
+
+    <style>
+        /* Reset & Pengaturan Dasar */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #3a3a3a;
+            color: white;
+            padding: 20px;
+        }
+
+        /* Kontainer Game Utama */
+        .game-container {
+            width: 100%;
+            max-width: 600px;
+            min-width: 320px;
+            background: #252525;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            text-align: center;
+        }
+
+        h1 {
+            color: #1e90ff; /* Biru cerah */
+            margin-bottom: 1.5rem;
+        }
+
+        /* Papan Skor & Kontrol */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            gap: 15px;
+        }
+
+        .scoreboard {
+            font-size: 1.2rem;
+            padding: 10px 15px;
+            border-radius: 8px;
+            background: #444;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        /* Menandakan giliran pemain aktif */
+        .scoreboard.active {
+            border-color: #1e90ff;
+            transform: scale(1.1);
+            color: #1e90ff;
+        }
+
+        #timer {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #f39c12; /* Oranye */
+        }
+
+        #startButton {
+            font-size: 1rem;
+            font-weight: bold;
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            background-color: #2ecc71; /* Hijau */
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        #startButton:hover:not(:disabled) {
+            background-color: #27ae60;
+        }
+        
+        #startButton:disabled {
+            background-color: #777;
+            cursor: not-allowed;
+        }
+
+        /* Pesan Status */
+        #message {
+            min-height: 1.5em; /* Mencegah layout "melompat" */
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-top: 1rem;
+            color: #f39c12;
+        }
+
+        /* Papan Permainan (Grid 3x3) */
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 450px;
+            margin: 0 auto;
+            /* Membuat papan responsif persegi */
+            aspect-ratio: 1 / 1;
+        }
+
+        /* Lubang Tikus */
+        .hole {
+            background: #1a1a1a;
+            border: 4px solid #555;
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden; /* Sembunyikan tikus di luar lubang */
+            cursor: pointer;
+        }
+
+        /* Tikus */
+        .mole {
+            width: 80%;
+            height: 80%;
+            background-color: #d2691e; /* Coklat tikus */
+            border: 3px solid #8b4513;
+            border-radius: 50%;
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            /* Mulai dari bawah (tersembunyi) */
+            transition: all 0.15s ease-out; /* Transisi cepat */
+            bottom: -100%;
+        }
+        
+        /* Mata Tikus (Opsional) */
+        .mole::after, .mole::before {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: black;
+            border-radius: 50%;
+            top: 30%;
+        }
+        .mole::before { left: 30%; }
+        .mole::after { right: 30%; }
+
+        /* Kelas ".up" untuk memunculkan tikus */
+        .hole.up .mole {
+            bottom: 10%; /* Muncul ke atas */
+        }
+    </style>
+</head>
+<body>
+
+    <main class="game-container">
+        <h1>Game Pukul Tikus!</h1>
+
+        <div class="controls">
+            <div id="p1Score" class="scoreboard">Pemain 1: 0</div>
+            <div id="timer">Waktu: 15</div>
+            <div id="p2Score" class="scoreboard">Pemain 2: 0</div>
+        </div>
+        
+        <button id="startButton">Mulai</button>
+        <p id="message">Pemain 1, tekan Mulai untuk bermain!</p>
+
+        <div class="game-board" id="gameBoard">
+            </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // === 1. Seleksi Elemen DOM ===
+            const gameBoard = document.getElementById('gameBoard');
+            const startButton = document.getElementById('startButton');
+            const timerDisplay = document.getElementById('timer');
+            const p1ScoreDisplay = document.getElementById('p1Score');
+            const p2ScoreDisplay = document.getElementById('p2Score');
+            const messageDisplay = document.getElementById('message');
+
+            // === 2. Variabel Status Game ===
+            const ROUND_TIME = 15; // Waktu per giliran (detik)
+            const MOLE_POP_SPEED = 700; // Seberapa sering tikus baru muncul (ms)
+            const MOLE_PEEK_TIME = 600; // Berapa lama tikus muncul (ms)
+            
+            let holes = []; // Array untuk menyimpan elemen lubang
+            let moles = []; // Array untuk menyimpan elemen tikus
+            
+            let player1Score = 0;
+            let player2Score = 0;
+            let currentPlayer = 1;
+            let gameRunning = false;
+            
+            let timer; // Variabel untuk countdown
+            let timerInterval; // ID untuk setInterval countdown
+            let moleInterval; // ID untuk setInterval kemunculan tikus
+            let moleTimeout; // ID untuk setTimeout hilangnya tikus
+            
+            let currentActiveHole = null; // Lubang mana yang sedang aktif
+            let canHit = false; // Mencegah klik ganda
+
+            // === 3. Inisialisasi Papan ===
+            function createBoard() {
+                gameBoard.innerHTML = ''; // Bersihkan papan
+                holes = [];
+                moles = [];
+                
+                for (let i = 0; i < 9; i++) {
+                    const hole = document.createElement('div');
+                    hole.classList.add('hole');
+                    
+                    const mole = document.createElement('div');
+                    mole.classList.add('mole');
+                    
+                    // Tambahkan listener ke tikus
+                    mole.addEventListener('click', hitMole);
+                    
+                    hole.appendChild(mole);
+                    gameBoard.appendChild(hole);
+                    
+                    holes.push(hole);
+                    moles.push(mole);
+                }
+            }
+
+            // === 4. Logika Permainan ===
+            
+            /**
+             * Menangani klik tombol Mulai/Main Lagi
+             */
+            function handleStartClick() {
+                if (gameRunning) return; // Jika game sedang jalan, abaikan
+
+                // Jika ini adalah game baru (setelah game over)
+                if (startButton.textContent === 'Main Lagi') {
+                    player1Score = 0;
+                    player2Score = 0;
+                    currentPlayer = 1;
+                    updateScoreUI();
+                }
+                
+                startTurn();
+            }
+
+            /**
+             * Memulai giliran satu pemain
+             */
+            function startTurn() {
+                gameRunning = true;
+                canHit = true;
+                timer = ROUND_TIME;
+                
+                startButton.disabled = true;
+                messageDisplay.textContent = `Ayo, Pemain ${currentPlayer}!`;
+                timerDisplay.textContent = `Waktu: ${timer}`;
+                
+                // Set kelas aktif pada scoreboard
+                p1ScoreDisplay.classList.toggle('active', currentPlayer === 1);
+                p2ScoreDisplay.classList.toggle('active', currentPlayer === 2);
+
+                // Mulai countdown
+                timerInterval = setInterval(countdown, 1000);
+                // Mulai memunculkan tikus
+                moleInterval = setInterval(popMole, MOLE_POP_SPEED);
+            }
+
+            /**
+             * Countdown waktu per giliran
+             */
+            function countdown() {
+                timer--;
+                timerDisplay.textContent = `Waktu: ${timer}`;
+                
+                if (timer <= 0) {
+                    endTurn();
+                }
+            }
+
+            /**
+             * Mengakhiri giliran pemain
+             */
+            function endTurn() {
+                gameRunning = false;
+                canHit = false;
+                
+                // Hentikan semua interval dan timeout
+                clearInterval(timerInterval);
+                clearInterval(moleInterval);
+                if (moleTimeout) clearTimeout(moleTimeout);
+
+                // Sembunyikan tikus yang mungkin masih muncul
+                if (currentActiveHole) {
+                    currentActiveHole.classList.remove('up');
+                }
+                
+                startButton.disabled = false;
+                
+                // Ganti pemain
+                if (currentPlayer === 1) {
+                    currentPlayer = 2;
+                    messageDisplay.textContent = `Pemain 1 selesai! Giliran Pemain 2.`;
+                    startButton.textContent = 'Mulai Giliran P2';
+                } else {
+                    // Permainan selesai, tentukan pemenang
+                    showWinner();
+                    currentPlayer = 1; // Reset untuk game berikutnya
+                    startButton.textContent = 'Main Lagi';
+                }
+                
+                // Hapus semua status aktif
+                p1ScoreDisplay.classList.remove('active');
+                p2ScoreDisplay.classList.remove('active');
+            }
+
+            /**
+             * Menampilkan pemenang
+             */
+            function showWinner() {
+                let winnerMsg;
+                if (player1Score > player2Score) {
+                    winnerMsg = `Pemain 1 Menang! 🎉 (${player1Score} vs ${player2Score})`;
+                } else if (player2Score > player1Score) {
+                    winnerMsg = `Pemain 2 Menang! 🏆 (${player2Score} vs ${player1Score})`;
+                } else {
+                    winnerMsg = `Permainan Seri! 🤝 (${player1Score} vs ${player2Score})`;
+                }
+                messageDisplay.textContent = winnerMsg;
+            }
+
+            /**
+             * Memunculkan tikus secara acak
+             */
+            function popMole() {
+                // Jika tikus sebelumnya masih ada, sembunyikan
+                if (currentActiveHole) {
+                    currentActiveHole.classList.remove('up');
+                }
+                if (moleTimeout) clearTimeout(moleTimeout);
+
+                // Pilih lubang baru
+                let randomIndex = Math.floor(Math.random() * holes.length);
+                const randomHole = holes[randomIndex];
+                
+                // Jika lubang yang dipilih sama dengan sebelumnya, pilih lagi (opsional)
+                if (randomHole === currentActiveHole) {
+                    return popMole(); // Coba lagi
+                }
+
+                currentActiveHole = randomHole;
+                currentActiveHole.classList.add('up');
+                canHit = true; // Bisa memukul tikus baru
+
+                // Set waktu untuk tikus menghilang
+                moleTimeout = setTimeout(() => {
+                    if (currentActiveHole) {
+                        currentActiveHole.classList.remove('up');
+                    }
+                    canHit = false; // Terlambat!
+                    currentActiveHole = null;
+                }, MOLE_PEEK_TIME);
+            }
+
+            /**
+             * Menangani saat tikus dipukul
+             */
+            function hitMole(event) {
+                // Cek apakah game berjalan dan apakah tikus bisa dipukul
+                if (!gameRunning || !canHit) return;
+                
+                // Cek apakah yang diklik adalah tikus yang sedang 'up'
+                const moleClicked = event.target;
+                const parentHole = moleClicked.parentElement;
+
+                if (parentHole === currentActiveHole) {
+                    // Berhasil!
+                    canHit = false; // Mencegah klik ganda
+                    
+                    // Tambah skor
+                    if (currentPlayer === 1) {
+                        player1Score++;
+                    } else {
+                        player2Score++;
+                    }
+                    updateScoreUI();
+                    
+                    // Sembunyikan tikus segera
+                    clearTimeout(moleTimeout); // Hentikan auto-hide
+                    parentHole.classList.remove('up');
+                    currentActiveHole = null;
+                }
+            }
+
+            /**
+             * Memperbarui tampilan skor
+             */
+            function updateScoreUI() {
+                p1ScoreDisplay.textContent = `Pemain 1: ${player1Score}`;
+                p2ScoreDisplay.textContent = `Pemain 2: ${player2Score}`;
+            }
+
+            // === 5. Event Listeners ===
+            startButton.addEventListener('click', handleStartClick);
+
+            // === 6. Mulai Game ===
+            createBoard(); // Buat papan saat halaman dimuat
+
+        });
+    </script>
+
+</body>
+</html>
